@@ -8,7 +8,26 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 
+class Error(Exception):
+    """Base class for other exceptions"""
+    pass
+class AlreadyCastedError(Error):
+    """Raised when the voter has already casted"""
+    pass
+class NotInVoterList(Error):
+    """Raised when voter is not in voter list"""
+    pass
+
+casted = set([])
+eligible = set([
+"1234-5678-1234",
+"5678-1234-1234",
+"2345-1234-2345",
+"9181-2699-3696"
+]) # Voter List
 def create(request):
+    print(eligible)
+    print(casted)
     if request.method == 'POST':
         voter_id = request.POST.get('voter-id-input')
         vote = request.POST.get('vote-input')
@@ -20,19 +39,28 @@ def create(request):
         print('\ncasted ballot: {}\n'.format(ballot))
         signature = ''
         try:
+            if voter_id not in eligible:
+                raise NotInVoterList
+            if voter_id in casted:
+                raise AlreadyCastedError
             # Create signature
             priv_key = ECC.import_key(private_key)
             h = SHA3_256.new(ballot.encode('utf-8'))
             signature = DSS.new(priv_key, 'fips-186-3').sign(h)
             print('\nsignature: {}\n'.format(signature.hex()))
-
             # Verify the signature using registered public key
             pub_key = ECC.import_key(settings.PUBLIC_KEY)
             verifier = DSS.new(pub_key, 'fips-186-3')
-        
             verifier.verify(h, signature)
             status = 'The ballot is signed successfully.'
+            casted.add(voter_id)
             error = False
+        except NotInVoterList:
+            status="You are not an eligible voter."
+            error=True;
+        except AlreadyCastedError:
+            status="You have already casted your vote."
+            error = True;
         except (ValueError, TypeError):
             status = 'The key is not registered.'
             error = True
